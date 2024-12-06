@@ -71,7 +71,7 @@ download_and_verify() {
 	local url=$1
 	local output_path=$2
 
-	echo "* Downloading ${url##*/}..."
+	echo "* Downloading ${url}..."
 	curl --fail --silent --location --output "$output_path" "$url" || return 1
 }
 
