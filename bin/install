@@ -2,6 +2,8 @@
 set -e
 set -o pipefail
 
+source "$(dirname "$0")/../lib/utils.sh"
+
 fail() {
 	echo -e "\e[31mFail:\e[m $*"
 	exit 1
@@ -38,13 +40,14 @@ verify_checksum() {
 	local file=$1
 	local checksums_file=$2
 
-	# 从 checksums.txt 提取对应文件的校验和
 	local expected_checksum
 	expected_checksum=$(grep "${file##*/}" "$checksums_file" | awk '{print $1}')
 
 	if [ -z "$expected_checksum" ]; then
 		fail "Checksum not found for ${file##*/}"
 	fi
+
+	echo "Expected checksum: $expected_checksum"
 
 	local computed_checksum
 	if command -v sha256sum >/dev/null; then
@@ -55,8 +58,12 @@ verify_checksum() {
 		fail "sha256sum or shasum command not found"
 	fi
 
+	echo "Computed checksum: $computed_checksum"
+
 	if [ "$computed_checksum" != "$expected_checksum" ]; then
 		fail "Checksum verification failed for ${file##*/}"
+	else
+		echo "Checksum verification passed for ${file##*/}"
 	fi
 }
 
@@ -112,8 +119,9 @@ install_lazygit() {
 
 	local binary_filename download_url checksums_url
 	binary_filename="$(get_binary_filename "$platform" "$architecture" "$version")"
-	download_url="https://github.com/jesseduffield/lazygit/releases/download/v${version}/${binary_filename}"
-	checksums_url="https://github.com/jesseduffield/lazygit/releases/download/v${version}/checksums.txt"
+
+	download_url="$(get_release_url "${version}" "${binary_filename}")"
+	checksums_url="$(get_checksums_url "${version}")"
 
 	local tmp_dir
 	tmp_dir="$(mktemp -d -t lazygit_XXXXXX)"
