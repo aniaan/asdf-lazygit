@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -e
+set -o pipefail
+
+fail() {
+	echo -e "\e[31mFail:\e[m $*"
+	exit 1
+}
+
+get_platform() {
+	case "$OSTYPE" in
+	darwin*) echo "Darwin" ;;
+	linux*) echo "Linux" ;;
+	*) return 1 ;;
+	esac
+}
+
+get_architecture() {
+	local arch
+	arch="$(uname -m)"
+	case "$arch" in
+	x86_64|amd64) echo "x86_64" ;;
+	aarch64|arm64) echo "arm64" ;;
+	*) return 1 ;;
+	esac
+}
+
+get_binary_filename() {
+	local platform=$1
+	local architecture=$2
+	local version=$3
+	local extension="tar.gz"
+
+	echo "lazygit_${version}_${platform}_${architecture}.${extension}"
+}
+
+verify_checksum() {
+	local file=$1
+	local checksums_file=$2
+
+	# 从 checksums.txt 提取对应文件的校验和
+	local expected_checksum
+	expected_checksum=$(grep "${file##*/}" "$checksums_file" | awk '{print $1}')
+
+	if [ -z "$expected_checksum" ]; then
+		fail "Checksum not found for ${file##*/}"
+	fi
+
+	local computed_checksum
+	if command -v sha256sum >/dev/null; then
+		computed_checksum=$(sha256sum "$file" | awk '{print $1}')
+	elif command -v shasum >/dev/null; then
+		computed_checksum=$(shasum -a 256 "$file" | awk '{print $1}')
+	else
+		fail "sha256sum or shasum command not found"
+	fi
+
+	if [ "$computed_checksum" != "$expected_checksum" ]; then
+		fail "Checksum verification failed for ${file##*/}"
+	fi
+}
+
+download_and_verify() {
+	local url=$1
+	local output_path=$2
+
+	echo "* Downloading ${url##*/}..."
+	curl --fail --silent --location --output "$output_path" "$url" || return 1
+}
+
+install_lazygit_binary() {
+	local download_url=$1
+	local checksums_url=$2
+	local binary_filename=$3
+	local install_path=$4
+	local tmp_dir=$5
+
+	local source_path="${tmp_dir}/${binary_filename}"
+	local checksums_path="${tmp_dir}/checksums.txt"
+
+	download_and_verify "$download_url" "$source_path" || return 1
+	download_and_verify "$checksums_url" "$checksums_path" || return 1
+	verify_checksum "$source_path" "$checksums_path" || return 1
+
+	echo "* Extracting archive..."
+	mkdir -p "$install_path/bin"
+	tar -xzf "$source_path" -C "$install_path/bin"
+
+	echo "* Setting permissions..."
+	chmod +x "$install_path/bin/lazygit"
+
+	rm -rf "$tmp_dir"
+	return 0
+}
+
+cleanup_and_fail() {
+	local tmp_dir=$1
+	rm -rf "$tmp_dir"
+	fail "$2"
+}
+
+install_lazygit() {
+	local install_type=$1
+	local version=$2
+	local install_path=$3
+
+	[ "$install_type" = "version" ] || fail "lazygit install type '$install_type' is not supported"
+
+	local platform architecture
+	platform="$(get_platform)" || fail "Unsupported platform"
+	architecture="$(get_architecture)" || fail "Unsupported architecture"
+
+	local binary_filename download_url checksums_url
+	binary_filename="$(get_binary_filename "$platform" "$architecture" "$version")"
+	download_url="https://github.com/jesseduffield/lazygit/releases/download/v${version}/${binary_filename}"
+	checksums_url="https://github.com/jesseduffield/lazygit/releases/download/v${version}/checksums.txt"
+
+	local tmp_dir
+	tmp_dir="$(mktemp -d -t lazygit_XXXXXX)"
+
+	echo "* Installing lazygit ${version} for ${platform}/${architecture}"
+
+	install_lazygit_binary "$download_url" "$checksums_url" "$binary_filename" "$install_path" "$tmp_dir" || cleanup_and_fail "$tmp_dir" "Installation failed"
+	echo "* Installation completed successfully!"
+}
+
+install_lazygit "$ASDF_INSTALL_TYPE" "$ASDF_INSTALL_VERSION" "$ASDF_INSTALL_PATH"
