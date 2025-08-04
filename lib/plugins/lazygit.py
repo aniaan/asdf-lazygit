@@ -14,8 +14,8 @@ PLUGIN = Plugin(
     repo_name="jesseduffield/lazygit",
     filename_template="lazygit_{normalize_version}_{platform}_{arch}.tar.gz",
     platform_map={
-        "darwin": "Darwin",
-        "linux": "Linux",
+        "darwin": "darwin",
+        "linux": "linux",
     },
     arch_map={
         "x86_64": "x86_64",
